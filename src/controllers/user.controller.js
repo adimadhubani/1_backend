@@ -3,6 +3,8 @@ import {ApiError} from "../utils/ApiError.js";
 import {User} from "../models/user.model.js";
 import  {uploadOnCloudinary} from "../utils/cloudinary.js";
 import {ApiResponse} from "../utils/ApiResponse.js";
+import mongoose from "mongoose";
+import Jwt  from "jsonwebtoken";
 
 const registerUser=asyncHandler(async(req,res)=>{
    
@@ -14,11 +16,11 @@ const registerUser=asyncHandler(async(req,res)=>{
     //     throw new ApiError(404,"fullName is required");
     // }
 
-    if([fullName,email,username,password].some((field)=> field?.trim==="")){
+    if([fullName,email,username,password].some((field)=> field?.trim()==="")){
         throw new ApiError(404,"All fields are required");
     }
 
-    const existedUser=User.findOne({
+    const existedUser= await User.findOne({
         $or:[{username},{email}]
     })
 
@@ -27,8 +29,14 @@ const registerUser=asyncHandler(async(req,res)=>{
     }
 
     // take avatar and coverImage to multer
+    // console.log(req.files);
     const avatarLocalPath=req.files?.avatar[0]?.path;
-    const coverImageLocalPath=req.files?.coverImage[0]?.path;
+    // const coverImageLocalPath=req.files?.coverImage[0]?.path;
+
+    let coverImageLocalPath;
+    if(req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length>0){
+        coverImageLocalPath=req.files.coverImage[0].path
+    }
 
     if(!avatarLocalPath){
         throw new ApiError(400,"Avatar file is required")
@@ -42,8 +50,11 @@ const registerUser=asyncHandler(async(req,res)=>{
         throw new ApiError(400,"Avatar file is required");
     }
 
-    const user=await User.create({ fullName,avatar:avatar.url,
-        coverImage:coverImage?.url || "", email, password,
+    const user=await User.create({ fullName,
+        avatar:avatar.url,
+        coverImage:coverImage?.url || "",
+         email, 
+         password,
         username: username.toLowerCase()
 
     })
