@@ -244,7 +244,7 @@ const  changeCurrentPassword = asyncHandler(async(req,res)=>{
 })
 
 const getCurrentUser=asyncHandler(async(req,res)=>{
-    return res.status(200).json(200,req.user,"Current user fetched Successfully")
+    return res.status(200).json(new ApiResponse(200,req.user,"Current user fetched Successfully"))
 })
 
 const updateAccountDetails=asyncHandler(async(req,res)=>{
@@ -254,7 +254,7 @@ const updateAccountDetails=asyncHandler(async(req,res)=>{
         throw new ApiError(400,"All field are required")
     }
 
-    const user=User.findByIdAndUpdate(req.user?._id,
+    const user=await User.findByIdAndUpdate(req.user?._id,
         {
             $set:{
                 fullName,
@@ -312,4 +312,140 @@ const updateUserCoverImage=asyncHandler(async(req,res)=>{
 
 })
 
-export {registerUser,loginUser,logoutUser,refreshAccessToken}
+
+// Aggreation Pipelines
+
+const getUserChannelProfile=asyncHandler(async(req,res)=>{
+    const {username}=req.params
+
+    if(!username?.trim()){
+           throw new ApiError(400,"Username is Missing")
+    }
+
+
+    const channel=await User.aggregate([
+        {
+            $match:{username:username?.toLowerCase()}
+        },
+        {
+            $lookup:{
+                from:"subscriptions",
+                localField:"_id",
+                foreignField:"channel",
+                as:"subscribers"
+            }
+        },
+
+        {
+            $lookup:{
+                from:"subscriptions",
+                localField:"_id",
+                foreignField:"subscriber",
+                as:"subscribedTo"
+            }
+        },
+
+       {
+          $addFields:{
+            subscribersCount:{ 
+                $size:"subscriber"},
+
+        channelSubscribedToCount:{
+            $size:"subscribedTo"
+        },
+
+
+        isSubscribed:{
+            $cond:{
+                if:{ $in:[req.user?._id,"$subscribers.subscriber"]},
+                then:true,
+                else:false
+            }
+          }
+          }
+       },
+
+       {
+        $project:{
+            fullName:1,
+            username:1,
+            subscribersCount:1,
+            channelSubscribedToCount:1,
+            isSubscribed:1,
+            avatar:1,
+            coverImage:1,
+            email:1
+        }
+       }
+    ])
+
+    if(!channel?.length){
+        throw new ApiError(404,"channel doesn't exist")
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200,channel[0],"user channel fetched successfully")
+    )
+
+})
+
+
+// sub pipelines
+
+const getWatchHistory=asyncHandler(async(req,res)=>{
+    const user=await User.aggregate([
+        {
+            $match:{
+                _id:new mongoose.Types.ObjectId(req.user._id)
+            }
+        },
+        {
+            $lookup:{
+                from:"videos",
+                localField:"watchHistory",
+                foreignField:"_id",
+                as:"watchHistory",
+                pipeline:[
+                    {
+                        $lookup:{
+                            from:"users",
+                            localField:"owner",
+                            foreignField:"_id",
+                            as:"owner",
+                            pipeline:[
+                                {
+                                    $project:{
+                                        fullName:1,
+                                        username:1,
+                                        avatar:1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields:{
+                            owner:{
+                                $first:"$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res.status(200).json(new ApiResponse(200,user[0].watchHistory  ,"Watch history fetched Successfully"))
+})
+export {registerUser,loginUser,logoutUser,refreshAccessToken,
+changeCurrentPassword,
+getCurrentUser,
+updateAccountDetails,
+updateUserAvatar,
+updateUserCoverImage,
+getUserChannelProfile,
+getWatchHistory
+
+
+
+}
